@@ -75,6 +75,19 @@ func NewClient(cfg *Config) *Client {
 		log.Fatal(err)
 	}
 
+	maxAttempts := 20
+	for attempts := 1; attempts <= maxAttempts; attempts++ {
+		err = db.Ping()
+		if err == nil {
+			break
+		}
+		log.Infof("Fail to connect (%d/%d attempts): %v", attempts, maxAttempts, err)
+		time.Sleep(time.Second)
+	}
+	if err != nil {
+		log.Fatal("Can't connect to the PostgreSQL server")
+	}
+
 	db.SetMaxOpenConns(cfg.maxOpenConns)
 	db.SetMaxIdleConns(cfg.maxIdleConns)
 
