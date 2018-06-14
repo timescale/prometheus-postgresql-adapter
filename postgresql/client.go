@@ -33,6 +33,7 @@ type Config struct {
 	copyTable                 string
 	maxOpenConns              int
 	maxIdleConns              int
+	connMaxLifetime           time.Duration
 	pgPrometheusNormalize     bool
 	pgPrometheusLogSamples    bool
 	pgPrometheusChunkInterval time.Duration
@@ -52,6 +53,7 @@ func ParseFlags(cfg *Config) *Config {
 	flag.StringVar(&cfg.copyTable, "pg.copy-table", "metrics_copy", "The PostgreSQL table")
 	flag.IntVar(&cfg.maxOpenConns, "pg.max-open-conns", 50, "The max number of open connections to the database")
 	flag.IntVar(&cfg.maxIdleConns, "pg.max-idle-conns", 10, "The max number of idle connections to the database")
+	flag.DurationVar(&cfg.connMaxLifetime, "pg.conn-max-lifetime", time.Minute*15, "The max amount of time a connection")
 	flag.BoolVar(&cfg.pgPrometheusNormalize, "pg.prometheus-normalized-schema", true, "Insert metric samples into normalized schema")
 	flag.BoolVar(&cfg.pgPrometheusLogSamples, "pg.prometheus-log-samples", false, "Log raw samples to stdout")
 	flag.DurationVar(&cfg.pgPrometheusChunkInterval, "pg.prometheus-chunk-interval", time.Hour*12, "The size of a time-partition chunk in TimescaleDB")
@@ -86,6 +88,7 @@ func NewClient(logger log.Logger, cfg *Config) *Client {
 
 	db.SetMaxOpenConns(cfg.maxOpenConns)
 	db.SetMaxIdleConns(cfg.maxIdleConns)
+	db.SetConnMaxLifetime(cfg.connMaxLifetime)
 
 	client := &Client{
 		logger: log.With(logger, "storage", "PostgreSQL"),
