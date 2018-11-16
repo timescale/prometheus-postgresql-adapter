@@ -15,7 +15,7 @@ import (
 
 	"github.com/timescale/prometheus-postgresql-adapter/util"
 
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
@@ -72,7 +72,6 @@ type Client struct {
 
 const (
 	sqlCreateTmpTable = "CREATE TEMPORARY TABLE IF NOT EXISTS %s_tmp(sample prom_sample) ON COMMIT DELETE ROWS;"
-	sqlCopyTable      = "COPY \"%s\" FROM STDIN"
 	sqlInsertLabels   = "INSERT INTO %s_labels (metric_name, labels) SELECT tmp.prom_name, tmp.prom_labels FROM (SELECT prom_time(sample), prom_value(sample), prom_name(sample), prom_labels(sample) FROM %s_tmp) tmp LEFT JOIN %s_labels l ON tmp.prom_name=l.metric_name AND tmp.prom_labels=l.labels WHERE l.metric_name IS NULL ON CONFLICT (metric_name, labels) DO NOTHING;"
 	sqlInsertValues   = "INSERT INTO %s_values SELECT tmp.prom_time, tmp.prom_value, l.id FROM (SELECT prom_time(sample), prom_value(sample), prom_name(sample), prom_labels(sample) FROM %s_tmp) tmp INNER JOIN %s_labels l on tmp.prom_name=l.metric_name AND  tmp.prom_labels=l.labels;"
 )
@@ -227,7 +226,7 @@ func (c *Client) Write(samples model.Samples) error {
 	} else {
 		copyTable = fmt.Sprintf("%s_samples", c.cfg.table)
 	}
-	copyStmt, err := tx.Prepare(fmt.Sprintf(sqlCopyTable, copyTable))
+	copyStmt, err := tx.Prepare(pq.CopyIn(copyTable, "sample"))
 
 	if err != nil {
 		log.Error("msg", "Error on COPY prepare", "err", err)
@@ -249,11 +248,12 @@ func (c *Client) Write(samples model.Samples) error {
 		}
 	}
 
-	_, err = copyStmt.Exec()
+	err = copyStmt.Close()
 	if err != nil {
-		log.Error("msg", "Error executing COPY statement", "err", err)
+		log.Error("msg", "Error on COPY Close when writing samples", "err", err)
 		return err
 	}
+
 
 	if copyTable == fmt.Sprintf("%s_tmp", c.cfg.table) {
 		stmtLabels, err := tx.Prepare(fmt.Sprintf(sqlInsertLabels, c.cfg.table, c.cfg.table, c.cfg.table))
@@ -289,12 +289,6 @@ func (c *Client) Write(samples model.Samples) error {
 			log.Error("msg", "Error on closing values statement", "err", err)
 			return err
 		}
-	}
-
-	err = copyStmt.Close()
-	if err != nil {
-		log.Error("msg", "Error on COPY Close when writing samples", "err", err)
-		return err
 	}
 
 	err = tx.Commit()
@@ -494,7 +488,8 @@ func (c *Client) buildQuery(q *prompb.Query) (string, error) {
 	labelEqualPredicates := make(map[string]string)
 
 	for _, m := range q.Matchers {
-		escapedValue := escapeValue(m.Value)
+		escapedValue := escapePgString(m.Value)
+		escapedName := escapePgString(m.Name)
 
 		if m.Name == model.MetricNameLabel {
 			switch m.Type {
@@ -502,14 +497,14 @@ func (c *Client) buildQuery(q *prompb.Query) (string, error) {
 				if len(escapedValue) == 0 {
 					matchers = append(matchers, fmt.Sprintf("(name IS NULL OR name = '')"))
 				} else {
-					matchers = append(matchers, fmt.Sprintf("name = '%s'", escapedValue))
+					matchers = append(matchers, fmt.Sprintf("name = E'%s'", escapedValue))
 				}
 			case prompb.LabelMatcher_NEQ:
-				matchers = append(matchers, fmt.Sprintf("name != '%s'", escapedValue))
+				matchers = append(matchers, fmt.Sprintf("name != E'%s'", escapedValue))
 			case prompb.LabelMatcher_RE:
-				matchers = append(matchers, fmt.Sprintf("name ~ '%s'", anchorValue(escapedValue)))
+				matchers = append(matchers, fmt.Sprintf("name ~ E'%s'", anchorValue(escapedValue)))
 			case prompb.LabelMatcher_NRE:
-				matchers = append(matchers, fmt.Sprintf("name !~ '%s'", anchorValue(escapedValue)))
+				matchers = append(matchers, fmt.Sprintf("name !~ E'%s'", anchorValue(escapedValue)))
 			default:
 				return "", fmt.Errorf("unknown metric name match type %v", m.Type)
 			}
@@ -520,17 +515,17 @@ func (c *Client) buildQuery(q *prompb.Query) (string, error) {
 					// From the PromQL docs: "Label matchers that match
 					// empty label values also select all time series that
 					// do not have the specific label set at all."
-					matchers = append(matchers, fmt.Sprintf("((labels ? '%s') = false OR (labels->>'%s' = ''))",
-						m.Name, m.Name))
+					matchers = append(matchers, fmt.Sprintf("((labels ? E'%s') = false OR (labels->>E'%s' = ''))",
+						escapedName, escapedName))
 				} else {
 					labelEqualPredicates[m.Name] = m.Value
 				}
 			case prompb.LabelMatcher_NEQ:
-				matchers = append(matchers, fmt.Sprintf("labels->>'%s' != '%s'", m.Name, escapedValue))
+				matchers = append(matchers, fmt.Sprintf("labels->>E'%s' != E'%s'", escapedName, escapedValue))
 			case prompb.LabelMatcher_RE:
-				matchers = append(matchers, fmt.Sprintf("labels->>'%s' ~ '%s'", m.Name, anchorValue(escapedValue)))
+				matchers = append(matchers, fmt.Sprintf("labels->>E'%s' ~ E'%s'", escapedName, anchorValue(escapedValue)))
 			case prompb.LabelMatcher_NRE:
-				matchers = append(matchers, fmt.Sprintf("labels->>'%s' !~ '%s'", m.Name, anchorValue(escapedValue)))
+				matchers = append(matchers, fmt.Sprintf("labels->>E'%s' !~ E'%s'", escapedName, anchorValue(escapedValue)))
 			default:
 				return "", fmt.Errorf("unknown match type %v", m.Type)
 			}
@@ -540,11 +535,11 @@ func (c *Client) buildQuery(q *prompb.Query) (string, error) {
 
 	if len(labelEqualPredicates) > 0 {
 		labelsJSON, err := json.Marshal(labelEqualPredicates)
-
 		if err != nil {
 			return "", err
 		}
-		equalsPredicate = fmt.Sprintf(" AND labels @> '%s'", labelsJSON)
+		escapedLabelsJSON := escapePgString(string(labelsJSON))
+		equalsPredicate = fmt.Sprintf(" AND labels @> E'%s'", escapedLabelsJSON)
 	}
 
 	matchers = append(matchers, fmt.Sprintf("time >= '%v'", toTimestamp(q.StartTimestampMs).Format(time.RFC3339)))
@@ -558,8 +553,12 @@ func (c *Client) buildCommand(q *prompb.Query) (string, error) {
 	return c.buildQuery(q)
 }
 
-func escapeValue(str string) string {
-	return strings.Replace(str, `'`, `\'`, -1)
+func escapePgString(str string) string {
+	return strings.Replace(strings.Replace(str, `\`, `\\`, -1), `'`, `\'`, -1)
+}
+
+func escapePgCopyLine(str string) string {
+	return strings.Replace(strings.Replace(str, `\`, `\\`, -1), `	`, `\t`, -1)
 }
 
 // anchorValue adds anchors to values in regexps since PromQL docs
