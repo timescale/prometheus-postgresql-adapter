@@ -3,6 +3,7 @@ package pgprometheus
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -24,6 +25,7 @@ import (
 // Config for the database
 type Config struct {
 	host                      string
+	host2                     string
 	port                      int
 	user                      string
 	password                  string
@@ -45,6 +47,7 @@ type Config struct {
 // ParseFlags parses the configuration flags specific to PostgreSQL and TimescaleDB
 func ParseFlags(cfg *Config) *Config {
 	flag.StringVar(&cfg.host, "pg.host", "localhost", "The PostgreSQL host")
+	flag.StringVar(&cfg.host2, "pg.host2", "", "The PostgreSQL host 2")
 	flag.IntVar(&cfg.port, "pg.port", 5432, "The PostgreSQL port")
 	flag.StringVar(&cfg.user, "pg.user", "postgres", "The PostgreSQL user")
 	flag.StringVar(&cfg.password, "pg.password", "", "The PostgreSQL password")
@@ -66,8 +69,9 @@ func ParseFlags(cfg *Config) *Config {
 
 // Client sends Prometheus samples to PostgreSQL
 type Client struct {
-	DB  *sql.DB
-	cfg *Config
+	DB   *sql.DB
+	cfg  *Config
+	host string
 }
 
 const (
@@ -81,41 +85,65 @@ var (
 	createTmpTableStmt *sql.Stmt
 )
 
-// NewClient creates a new PostgreSQL client
-func NewClient(cfg *Config) *Client {
-	connStr := fmt.Sprintf("host=%v port=%v user=%v dbname=%v password='%v' sslmode=%v connect_timeout=10",
-		cfg.host, cfg.port, cfg.user, cfg.database, cfg.password, cfg.sslMode)
+func rwClient(cfg *Config, host string) (*Client, error) {
+	client := &Client{
+		cfg:  cfg,
+		host: host,
+	}
 
+	connStr := fmt.Sprintf("host=%v port=%v user=%v dbname=%v password='%v' sslmode=%v connect_timeout=10",
+		host, cfg.port, cfg.user, cfg.database, cfg.password, cfg.sslMode)
+	log.Info("msg", connStr)
 	wrappedDb, err := util.RetryWithFixedDelay(uint(cfg.dbConnectRetries), time.Second, func() (interface{}, error) {
 		return sql.Open("postgres", connStr)
 	})
-
-	log.Info("msg", connStr)
-
 	if err != nil {
-		log.Error("err", err)
-		os.Exit(1)
+		log.Error("host", host, "err", err)
+		return nil, err
 	}
 
 	db := wrappedDb.(*sql.DB)
+	if len(cfg.host2) > 0 {
+		log.Info("host", host, "msg", "checking R/W")
+		readOnly := true
+		err = db.QueryRow("SELECT pg_is_in_recovery()").Scan(&readOnly)
+		if err != nil {
+			log.Error("host", host, "err", err)
+			return nil, err
+		}
+		if readOnly {
+			log.Error("host", host, "msg", "R/O")
+			return nil, errors.New("R/O")
+		}
+	}
 
 	db.SetMaxOpenConns(cfg.maxOpenConns)
 	db.SetMaxIdleConns(cfg.maxIdleConns)
+	client.DB = db
+	log.Info("host", host, "msg", "R/W")
+	return client, nil
+}
 
-	client := &Client{
-		DB:  db,
-		cfg: cfg,
+// NewClient creates a new PostgreSQL client
+func NewClient(cfg *Config) *Client {
+
+	client, err := rwClient(cfg, cfg.host)
+	if err != nil && len(cfg.host2) > 0 {
+		client, err = rwClient(cfg, cfg.host2)
+	}
+	if err != nil {
+		os.Exit(1)
 	}
 
 	if !cfg.readOnly {
 		err = client.setupPgPrometheus()
 
 		if err != nil {
-			log.Error("err", err)
+			log.Error("msg", "Error setup PgPrometheus", "err", err)
 			os.Exit(1)
 		}
 
-		createTmpTableStmt, err = db.Prepare(fmt.Sprintf(sqlCreateTmpTable, cfg.table))
+		createTmpTableStmt, err = client.DB.Prepare(fmt.Sprintf(sqlCreateTmpTable, cfg.table))
 		if err != nil {
 			log.Error("msg", "Error on preparing create tmp table statement", "err", err)
 			os.Exit(1)
@@ -472,14 +500,25 @@ func (c *Client) Read(req *prompb.ReadRequest) (*prompb.ReadResponse, error) {
 
 // HealthCheck implements the healtcheck interface
 func (c *Client) HealthCheck() error {
-	rows, err := c.DB.Query("SELECT 1")
-
-	if err != nil {
-		log.Debug("msg", "Health check error", "err", err)
-		return err
+	if len(c.cfg.host2) > 0 {
+		readOnly := true
+		err := c.DB.QueryRow("SELECT pg_is_in_recovery()").Scan(&readOnly)
+		if err != nil {
+			log.Error("msg", "Health check error", "err", err)
+			return err
+		}
+		if readOnly {
+			log.Error("msg", "Health check, host is R/O", "host", c.host)
+			return errors.New("R/O")
+		}
+	} else {
+		rows, err := c.DB.Query("SELECT 1")
+		if err != nil {
+			log.Debug("msg", "Health check error", "err", err)
+			return err
+		}
+		rows.Close()
 	}
-
-	rows.Close()
 	return nil
 }
 
