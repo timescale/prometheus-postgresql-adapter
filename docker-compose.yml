@@ -1,0 +1,31 @@
+services:
+  db:
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+    image: timescale/pg_prometheus:latest
+    ports:
+    - 5432:5432/tcp
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+    - 9090:9090/tcp
+    volumes:
+    - ./sample-docker-prometheus.yml:/etc/prometheus/prometheus.yml:ro
+  prometheus_postgresql_adapter:
+    build:
+      context: .
+    depends_on:
+    - db
+    - prometheus
+    environment:
+      TS_PROM_LOG_LEVEL: debug
+      TS_PROM_PG_DB_CONNECT_RETRIES: 10
+      TS_PROM_PG_HOST: db
+      TS_PROM_PG_PASSWORD: postgres
+      TS_PROM_PG_SCHEMA: postgres
+      TS_PROM_WEB_TELEMETRY_PATH: /metrics-text
+    image: timescale/prometheus-postgresql-adapter:latest
+    ports:
+    - 9201:9201/tcp
+version: '3.0'

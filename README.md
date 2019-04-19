@@ -1,6 +1,6 @@
 # Prometheus remote storage adapter for PostgreSQL
 
-With this remote storage adapter, Prometheus can use PostgreSQL as a long-term store for time-series metrics. 
+With this remote storage adapter, Prometheus can use PostgreSQL as a long-term store for time-series metrics.
 
 Related packages to install:
 - [pg_prometheus extension for PostgreSQL](https://github.com/timescale/pg_prometheus) (required)
@@ -9,11 +9,11 @@ for better performance and scalability)
 
 ## Quick start
 
-You can download pre-built binaries [here](https://github.com/timescale/prometheus-postgresql-adapter/releases) 
+You can download pre-built binaries [here](https://github.com/timescale/prometheus-postgresql-adapter/releases)
 
 ## Docker instructions
 
-A docker image for the prometheus-postgreSQL storage adapter is available 
+A docker image for the prometheus-postgreSQL storage adapter is available
 on Docker Hub at [timescale/prometheus-postgresql-adapter](https://hub.docker.com/r/timescale/prometheus-postgresql-adapter/).
 
 The easiest way to use this image is in conjunction with the `pg_prometheus`
@@ -53,6 +53,21 @@ remote_read:
   - url: "http://<adapter-address>:9201/read"
 ```
 
+## Environment variables
+
+All of the CLI flags are also available as environment variables, and begin with the prefix `TS_PROM`.
+For example, the following mappings apply:
+
+```
+-adapter-send-timeout => TS_PROM_ADAPTER_SEND_TIMEOUT
+-leader-election-rest => TS_PROM_LEADER_ELECTION_REST
+-pg-host              => TS_PROM_PG_HOST
+-web-telemetry-path   => TS_PROM_WEB_TELEMETRY_PATH
+...
+```
+
+Each CLI flag and equivalent environment variable is also displayed on the help `prometheus-postgresql-adapter -h` command.
+
 ## Building
 
 Before building, make sure the following prerequisites are installed:
@@ -78,7 +93,7 @@ make
 make docker-image
 
 # Push to Docker registry (requires permission)
-make docker-push ORGANIZATION=myorg 
+make docker-push ORGANIZATION=myorg
 ```
 
 ## Contributing
