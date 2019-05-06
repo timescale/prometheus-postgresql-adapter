@@ -1,11 +1,43 @@
+sudo: 'required'
+
 language: go
 
-go:
-  - 1.10.x
+services:
+  - 'docker'
+
+env:
+  global:
+  - ORGANIZATION=$DOCKER_USERNAME
+
+matrix:
+  include:
+  - go: "1.11.x"
+    env: VERSION=0.4.1
+fast_finish: true
 
 before_install:
   # We need golang/dep installed to resolve our dependencies
   - curl https://raw.githubusercontent.com/golang/dep/master/install.sh | sh
   - dep ensure
 
-script: make build test
+script: 
+  - 'make build test'
+  - 'make docker-image'
+
+after_success:
+  docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD;
+  make docker-push;
+  # - if [[ "$TRAVIS_BRANCH" == "master" ]]; then
+  #     docker login -u $DOCKER_USERNAME -p $DOCKER_PASSWORD;
+  #     make docker-push;
+  #   else
+  #     echo "Build succeeded in non-master branch"
+  #   fi
+
+# Uncomment if only commits to master require builds
+# branches:
+#   except:
+#     - master
+
+notifications:
+  email: false

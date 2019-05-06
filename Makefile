@@ -1,8 +1,8 @@
-VERSION=$(shell git describe --always | sed 's|v\(.*\)|\1|')
-BRANCH=$(shell git rev-parse --abbrev-ref HEAD)
-OS:=$(shell uname -s | awk '{ print tolower($$1) }')
-ARCH=amd64
-ORGANIZATION=timescale
+VERSION?=$(shell git describe --always | sed 's|v\(.*\)|\1|')
+BRANCH?=$(shell git rev-parse --abbrev-ref HEAD)
+OS?=$(shell uname -s | awk '{ print tolower($$1) }')
+ARCH?=amd64
+ORGANIZATION?=timescale
 
 ifeq ($(shell uname -m), i386)
 	ARCH=386
