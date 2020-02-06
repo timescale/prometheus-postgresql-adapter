@@ -1,0 +1,1037 @@
+NAME: chart-1580984566
+LAST DEPLOYED: Thu Feb  6 11:22:47 2020
+NAMESPACE: default
+STATUS: pending-install
+REVISION: 1
+TEST SUITE: None
+USER-SUPPLIED VALUES:
+{}
+
+COMPUTED VALUES:
+promadapter:
+  host: 127.0.0.1
+  image: timescale/prometheus-postgresql-adapter
+  pass: YWRtaW4=
+  user: postgres
+timescaledb-single:
+  affinity: {}
+  affinityTemplate: |
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          topologyKey: "kubernetes.io/hostname"
+          labelSelector:
+            matchLabels:
+              app:  {{ template "timescaledb.name" . }}
+              release: {{ .Release.Name | quote }}
+              cluster-name: {{ template "clusterName" . }}
+      - weight: 50
+        podAffinityTerm:
+          topologyKey: failure-domain.beta.kubernetes.io/zone
+          labelSelector:
+            matchLabels:
+              app:  {{ template "timescaledb.name" . }}
+              release: {{ .Release.Name | quote }}
+              cluster-name: {{ template "clusterName" . }}
+  backup:
+    enabled: false
+    env: null
+    jobs:
+    - name: full-weekly
+      schedule: 12 02 * * 0
+      type: full
+    - name: incremental-daily
+      schedule: 12 02 * * 1-6
+      type: incr
+    pgBackRest:
+      compress-level: 3
+      process-max: 4
+      repo1-cipher-type: none
+      repo1-retention-diff: 2
+      repo1-retention-full: 2
+      repo1-s3-bucket: my_example_s3_bucket_for_backups
+      repo1-s3-endpoint: s3.amazonaws.com
+      repo1-s3-key: examplekeyid
+      repo1-s3-key-secret: examplesecret+D48GXfDdtl823nlSRRv7dmB
+      repo1-s3-region: us-east-2
+      repo1-type: s3
+      start-fast: "y"
+  callbacks:
+    configMap: null
+  credentials:
+    admin: cola
+    postgres: tea
+    standby: pinacolada
+  debug:
+    execStartPre: null
+  enabled: true
+  global: {}
+  image:
+    pullPolicy: IfNotPresent
+    repository: timescaledev/timescaledb-ha
+    tag: pg11-ts1.6
+  loadBalancer:
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-connection-idle-timeout: "4000"
+    enabled: true
+  nameOverride: timescaledb
+  networkPolicy:
+    enabled: false
+    ingress: null
+    prometheusApp: prometheus
+  nodeSelector: {}
+  patroni:
+    bootstrap:
+      dcs:
+        loop_wait: 10
+        maximum_lag_on_failover: 33554432
+        postgresql:
+          parameters:
+            archive_command: /etc/timescaledb/scripts/pgbackrest_archive.sh %p
+            archive_mode: "on"
+            archive_timeout: 1800s
+            autovacuum_analyze_scale_factor: 0.02
+            autovacuum_max_workers: 10
+            autovacuum_vacuum_scale_factor: 0.05
+            hot_standby: "on"
+            log_autovacuum_min_duration: 0
+            log_checkpoints: "on"
+            log_connections: "on"
+            log_disconnections: "on"
+            log_line_prefix: '%t [%p]: [%c-%l] %u@%d,app=%a [%e] '
+            log_lock_waits: "on"
+            log_min_duration_statement: 1s
+            log_statement: ddl
+            max_connections: 100
+            max_prepared_transactions: 150
+            shared_preload_libraries: timescaledb,pg_stat_statements
+            ssl: "on"
+            ssl_cert_file: /etc/certificate/tls.crt
+            ssl_key_file: /etc/certificate/tls.key
+            tcp_keepalives_idle: 900
+            tcp_keepalives_interval: 100
+            temp_file_limit: 1GB
+            timescaledb.passfile: ../.pgpass
+            unix_socket_directories: /var/run/postgresql
+            unix_socket_permissions: "0750"
+            wal_level: hot_standby
+            wal_log_hints: "on"
+          use_pg_rewind: true
+          use_slots: true
+        retry_timeout: 10
+        ttl: 30
+      method: restore_or_initdb
+      post_init: /etc/timescaledb/scripts/post_init.sh
+      restore_or_initdb:
+        command: |
+          /etc/timescaledb/scripts/restore_or_initdb.sh --encoding=UTF8 --locale=C.UTF-8
+        keep_existing_recovery_conf: true
+    kubernetes:
+      ports:
+      - name: postgresql
+        port: 5432
+        targetPort: 5432
+      role_label: role
+      scope_label: cluster-name
+      use_endpoints: true
+    log:
+      level: WARNING
+    postgresql:
+      authentication:
+        replication:
+          username: standby
+        superuser:
+          username: postgres
+      basebackup:
+      - waldir: /var/lib/postgresql/wal/pg_wal
+      callbacks:
+        on_reload: /etc/timescaledb/scripts/patroni_callback.sh
+        on_restart: /etc/timescaledb/scripts/patroni_callback.sh
+        on_role_change: /etc/timescaledb/scripts/patroni_callback.sh
+        on_start: /etc/timescaledb/scripts/patroni_callback.sh
+        on_stop: /etc/timescaledb/scripts/patroni_callback.sh
+      create_replica_methods:
+      - pgbackrest
+      - basebackup
+      listen: 0.0.0.0:5432
+      pg_hba:
+      - hostnossl all,replication all                all                reject
+      - local     all             all                                   peer
+      - hostssl   all             all                127.0.0.1/32       md5
+      - hostssl   all             all                ::1/128            md5
+      - hostssl   replication     standby            all                md5
+      - hostssl   all             all                all                md5
+      pgbackrest:
+        command: /etc/timescaledb/scripts/pgbackrest_restore.sh
+        keep_data: true
+        no_master: 1
+        no_params: true
+      recovery_conf:
+        restore_command: /etc/timescaledb/scripts/pgbackrest_archive_get.sh %f "%p"
+      use_unix_socket: true
+    restapi:
+      listen: 0.0.0.0:8008
+  persistentVolumes:
+    data:
+      accessModes:
+      - ReadWriteOnce
+      annotations: {}
+      enabled: true
+      mountPath: /var/lib/postgresql
+      size: 2Gi
+      subPath: ""
+    wal:
+      accessModes:
+      - ReadWriteOnce
+      annotations: {}
+      enabled: true
+      mountPath: /var/lib/postgresql/wal
+      size: 1Gi
+      storageClass: null
+      subPath: ""
+  podAnnotations: {}
+  prometheus:
+    enabled: false
+    env: null
+    image:
+      pullPolicy: IfNotPresent
+      repository: wrouesnel/postgres_exporter
+      tag: v0.7.0
+    volumeMounts: null
+    volumes: null
+  rbac:
+    create: true
+  readinessProbe:
+    enabled: true
+    failureThreshold: 6
+    initialDelaySeconds: 5
+    periodSeconds: 30
+    successThreshold: 1
+    timeoutSeconds: 5
+  replicaCount: 3
+  replicaLoadBalancer:
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-connection-idle-timeout: "4000"
+    enabled: false
+  resources: {}
+  serviceAccount:
+    create: true
+    name: null
+  timescaledbTune:
+    args: {}
+    enabled: false
+  tls:
+    cert: ""
+    key: ""
+  tolerations: []
+
+HOOKS:
+---
+# Source: prom-adapter/charts/timescaledb-single/templates/job-update-patroni.yaml
+# This file and its contents are licensed under the Apache License 2.0.
+# Please see the included NOTICE for copyright information and LICENSE for a copy of the license.
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "chart-1580984566-patroni-8j"
+  labels:
+    app: chart-1580984566-timescaledb
+    chart: timescaledb-single-0.5.3
+    release: chart-1580984566
+    heritage: Helm
+    cluster-name: chart-1580984566
+  annotations:
+    "helm.sh/hook": post-upgrade
+    "helm.sh/hook-delete-policy": hook-succeeded
+spec:
+  activeDeadlineSeconds: 60
+  template:
+    metadata:
+      labels:
+        app: chart-1580984566-timescaledb
+        chart: timescaledb-single-0.5.3
+        release: chart-1580984566
+        heritage: Helm
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: chart-1580984566-timescaledb-patch-patroni-config
+        image: curlimages/curl
+        command: ["/usr/bin/curl"]
+        args:
+        - --connect-timeout
+        - '10'
+        - --include
+        - --silent
+        - --show-error
+        - --fail
+        - --request
+        - PATCH
+        - --data
+        - "{\"loop_wait\":10,\"maximum_lag_on_failover\":33554432,\"postgresql\":{\"parameters\":{\"archive_command\":\"/etc/timescaledb/scripts/pgbackrest_archive.sh %p\",\"archive_mode\":\"on\",\"archive_timeout\":\"1800s\",\"autovacuum_analyze_scale_factor\":0.02,\"autovacuum_max_workers\":10,\"autovacuum_vacuum_scale_factor\":0.05,\"hot_standby\":\"on\",\"log_autovacuum_min_duration\":0,\"log_checkpoints\":\"on\",\"log_connections\":\"on\",\"log_disconnections\":\"on\",\"log_line_prefix\":\"%t [%p]: [%c-%l] %u@%d,app=%a [%e] \",\"log_lock_waits\":\"on\",\"log_min_duration_statement\":\"1s\",\"log_statement\":\"ddl\",\"max_connections\":100,\"max_prepared_transactions\":150,\"shared_preload_libraries\":\"timescaledb,pg_stat_statements\",\"ssl\":\"on\",\"ssl_cert_file\":\"/etc/certificate/tls.crt\",\"ssl_key_file\":\"/etc/certificate/tls.key\",\"tcp_keepalives_idle\":900,\"tcp_keepalives_interval\":100,\"temp_file_limit\":\"1GB\",\"timescaledb.passfile\":\"../.pgpass\",\"unix_socket_directories\":\"/var/run/postgresql\",\"unix_socket_permissions\":\"0750\",\"wal_level\":\"hot_standby\",\"wal_log_hints\":\"on\"},\"use_pg_rewind\":true,\"use_slots\":true},\"retry_timeout\":10,\"ttl\":30}"
+        - "http://chart-1580984566-config:8008/config"
+MANIFEST:
+---
+# Source: prom-adapter/charts/timescaledb-single/templates/sec-certificate.yaml
+# This file and its contents are licensed under the Apache License 2.0.
+# Please see the included NOTICE for copyright information and LICENSE for a copy of the license.---
+apiVersion: v1
+kind: Secret
+type: kubernetes.io/tls
+metadata:
+  name: chart-1580984566-timescaledb-certificate
+  labels:
+    app: chart-1580984566-timescaledb
+    chart: timescaledb-single-0.5.3
+    release: chart-1580984566
+    heritage: Helm
+    cluster-name: chart-1580984566
+data:
+  tls.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSURBekNDQWV1Z0F3SUJBZ0lSQU0vTlkybUs3YXVLTHlPM3N4dlJhdHd3RFFZSktvWklodmNOQVFFTEJRQXcKR3pFWk1CY0dBMVVFQXhNUVkyaGhjblF0TVRVNE1EazRORFUyTmpBZUZ3MHlNREF5TURZeE1ESXlORGRhRncweQpOVEF5TURVeE1ESXlORGRhTUJzeEdUQVhCZ05WQkFNVEVHTm9ZWEowTFRFMU9EQTVPRFExTmpZd2dnRWlNQTBHCkNTcUdTSWIzRFFFQkFRVUFBNElCRHdBd2dnRUtBb0lCQVFDd3I4aHp3bnlwRTdLcnR0Z0xDaE5TOVJvNU5DcGwKWHpmYkJXa0UxMTJPYUhmRzVZdncxcHJ2K1JpU1A4cURJZlBVYXA2L0ZkK0V4RWYvTC9jL1BXaUxMNU9sZHVaTQozU2FLcjVGa1pFRjNlRTJ4bXZWU0hXOUM0bXFIMVFKSFozRU04S01keWJBNmwxYWQwK0lIZzZmQXQvaXJZenV3Clg0ajlFOExoQjJjanhsbHdnd3dLVENISjFMN3dMSzUvU0VNcWdiMnc1NGVvWnBPV2FpcEpKR3ZBdkw3ZFdsanQKVWxUTEdxbmxsTWptdWIyaTM1SkxvcmNYZENIeGNKcHplcDNMbWFnZFdpWTZObTdSblA5K3JXMWZJK013cTBRUgo4cE14d2hwSlNYaDFNandsSmVkMnZzR3dHVFAzT2luQ3U2QjdPc1R2RVVESnQyVUdSM1ZDSmVKdEFnTUJBQUdqClFqQkFNQTRHQTFVZER3RUIvd1FFQXdJQ3BEQWRCZ05WSFNVRUZqQVVCZ2dyQmdFRkJRY0RBUVlJS3dZQkJRVUgKQXdJd0R3WURWUjBUQVFIL0JBVXdBd0VCL3pBTkJna3Foa2lHOXcwQkFRc0ZBQU9DQVFFQWhYUUNyd0JoUEptRQpsQ2pzVEJHZ3YvMkpxOXNlVk1OdVZ0bCs2dWs4cUVKTllNRW12d3VWQUw1Qmp4ZThhaC93bzQvU0ZlWThkMEIrCmtDN0dZVXJ6ZlFuZDZ1S2FxSWJFSEJMMURuT1NzLzFLaUZncWFuQUtxaUltS2psN1M2M3hLYjNYU1FCOFRBRUkKaFo1UFhkMVZmZUkxMzZiWk1XUUY4TndDbjF6UTk2SWVzYUkzdm1COGpsWXZlSWhvdm1VT0c4RTFtNE9qUGdScQpmTWg3YWE3UlZlOEUxUk9SSXVqZ1dXZWhvaHBOVWtUcHY4QlIzZEduWGxicDJ2eGdFUWdBWjkxYXR1bXdZZEZhCkkxenRWakd1SmcwV3VZa0tBQm5FVzI5RWJoc2JKdXR0ZUI0Vmh5YUdFKy9mV1JneE1oSlNscU84Ry9NV3BOMmsKaGszWGo0WWpJUT09Ci0tLS0tRU5EIENFUlRJRklDQVRFLS0tLS0K
+  tls.key: LS0tLS1CRUdJTiBSU0EgUFJJVkFURSBLRVktLS0tLQpNSUlFb3dJQkFBS0NBUUVBc0svSWM4SjhxUk95cTdiWUN3b1RVdlVhT1RRcVpWODMyd1ZwQk5kZGptaDN4dVdMCjhOYWE3L2tZa2ovS2d5SHoxR3FldnhYZmhNUkgveS8zUHoxb2l5K1RwWGJtVE4wbWlxK1JaR1JCZDNoTnNacjEKVWgxdlF1SnFoOVVDUjJkeERQQ2pIY213T3BkV25kUGlCNE9ud0xmNHEyTTdzRitJL1JQQzRRZG5JOFpaY0lNTQpDa3doeWRTKzhDeXVmMGhES29HOXNPZUhxR2FUbG1vcVNTUnJ3THkrM1ZwWTdWSlV5eHFwNVpUSTVybTlvdCtTClM2SzNGM1FoOFhDYWMzcWR5NW1vSFZvbU9qWnUwWnovZnExdFh5UGpNS3RFRWZLVE1jSWFTVWw0ZFRJOEpTWG4KZHI3QnNCa3o5em9wd3J1Z2V6ckU3eEZBeWJkbEJrZDFRaVhpYlFJREFRQUJBb0lCQUVEUHVrLzhQNDRsMDV4NQpiYlplODhleWNQUWExcEpvNHl4TVI4R20zb0ttZjRsT0dvODFxWS90WjczOStHTXh5U2RhRlBFekxOS2V6V29tClJpUEVldHpUanUxYk9BOXA4QUZmZFkzRjJOM2lHMTNTNGJwRllkSy9DeVRZVmdXclJDVGpBSEtrMFNnczYzRHAKa0RnQmF6K2VQSEZoN1RzOVVCckZiTzd1c0Q3R255bGdaYmE4alRuUjdoc2FFRWJyaW1XUno0TmhkSU5MVGY2YgoyOFlCUHdDQVNpdUVlbGszWC95ZVdPR3htMmhVNHQ2dk5NYno1NGdvSzF4eG1GNzZJUktkbmZpZXhpclJsdzZXCnJwOUZJRkFtbUY5c0hUM0RGd2tmNDU4V1Jyd1BmVThtSWVRcFRqcVI5WWFPVVFROHU2SWtGRGhmRm1ERkFJeXoKam5iR3F3RUNnWUVBeUZYR3VOeW4vYkFWTzZLZG8xcVhMeEpXb25kZDJBY1RTUFRCNE00dlljSEUvS0NpYnFtTApySXVLQ01jTnordGVlME9TWFJtMHg5TXBtR2R4S2tGM0praXF4aWtCM3dRbDU3U2R6TnFxN1pNVHRMZmkwUHZKCnJ2N3k1alA3dnZIMk5tbi9lNXd0TlNmRkExQ2Iyc05pV0l5bDZndnZ5UnlNOHc5VWozaFFDUFVDZ1lFQTRjZloKWW9XZXBZWUpDS2kyTWhDM1hsNlRxczFWb3FGcG1SS0VJL25zalVIWnZqRlJNbkpGcWlwSTdNVExVN0NqK29TWAo0anovUHA4eGllcDNnYjBhdVRxSTBUREh1S3RLV2t6NzBlS1Y0bnBLaURNTWQ4Q0o5Vnk4SjczS3VUdHY0NnRFCmtXWVQ4NUtpa0tmd3gwS3NnNm0vK3JPUENYQzZxUHJvdWVQWmFKa0NnWUIvU2drWElwVFcydy9Tc1hOcC9NQjgKMXpFV3o3TmY5TGJyTHlFVkhzejZWeTA3dXpFYUVUNC9KdlpRdDNGdVA4WHJtamFnVXhvTHNYOEhhQXArWjlRMgpEZ3Y4RnNncWxLOGs5eDBnc1h2VHNoVGVTY3lqTHFpcU9USEsxUkxLODJDV21Ha05lR0U5R2dUVEkxK3o4MXRFCm1qRTljZElzdmFoTk05dHR3V3RSRlFLQmdDb2JHU0ZVaGZlY2ZZYk4zOXlLWFlnTjMwQVZOd2t6VFB3dEJkT24Kd2tPOXFodmNHcVpyeFM0czRKaTNRcXdDM3pIVEZIZ3VvL05Md1BOVmRLQVBZakoxQmhydEcvSUdqOEV6WmlzSQpOS2VkNHRSdm9MMmNmSjN6ZzJ0dDY2YUx2UndhVHBsSERpVjRqVFNvL1RCTDhOeEZCZlo5RWduU3FoemxYZzE4CnZvalJBb0dCQUpsUlVqbzg4KzhjOW9zVzRYa3FkTEFrWmh6SkhvNlN4SFhOeUpOa2hnTEVUYmNtVDRhOHlOaWgKNklFRVpaVS81SFEvNWwvdWpsTHdERDFNN3p2Rjc2UFdCV3BoWlJ6b1FaNFloNFFNUmwvbS9iaE5nZndwVDNQVwpLUVZMT2FXcHhnSEs4eEhxdHJYTTFnOXJCNm1jTytpcytyQ2QrUE9BQlBqbldTV1lkaGVaCi0tLS0tRU5EIFJTQSBQUklWQVRFIEtFWS0tLS0tCg==
+...
+---
+# Source: prom-adapter/charts/timescaledb-single/templates/sec-passwords.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: chart-1580984566-timescaledb-passwords
+  labels:
+    app: chart-1580984566-timescaledb
+    chart: timescaledb-single-0.5.3
+    release: chart-1580984566
+    heritage: Helm
+type: Opaque
+data:
+  "admin": Y29sYQ==
+  "postgres": dGVh
+  "standby": cGluYWNvbGFkYQ==
+...
+---
+# Source: prom-adapter/charts/timescaledb-single/templates/configmap-patroni.yaml
+# This file and its contents are licensed under the Apache License 2.0.
+# Please see the included NOTICE for copyright information and LICENSE for a copy of the license.---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chart-1580984566-timescaledb-patroni
+  labels:
+    app: chart-1580984566-timescaledb
+    chart: timescaledb-single-0.5.3
+    release: chart-1580984566
+    heritage: Helm
+    cluster-name: chart-1580984566
+data:
+  patroni.yaml: |
+    bootstrap:
+      dcs:
+        loop_wait: 10
+        maximum_lag_on_failover: 33554432
+        postgresql:
+          parameters:
+            archive_command: /etc/timescaledb/scripts/pgbackrest_archive.sh %p
+            archive_mode: "on"
+            archive_timeout: 1800s
+            autovacuum_analyze_scale_factor: 0.02
+            autovacuum_max_workers: 10
+            autovacuum_vacuum_scale_factor: 0.05
+            hot_standby: "on"
+            log_autovacuum_min_duration: 0
+            log_checkpoints: "on"
+            log_connections: "on"
+            log_disconnections: "on"
+            log_line_prefix: '%t [%p]: [%c-%l] %u@%d,app=%a [%e] '
+            log_lock_waits: "on"
+            log_min_duration_statement: 1s
+            log_statement: ddl
+            max_connections: 100
+            max_prepared_transactions: 150
+            shared_preload_libraries: timescaledb,pg_stat_statements
+            ssl: "on"
+            ssl_cert_file: /etc/certificate/tls.crt
+            ssl_key_file: /etc/certificate/tls.key
+            tcp_keepalives_idle: 900
+            tcp_keepalives_interval: 100
+            temp_file_limit: 1GB
+            timescaledb.passfile: ../.pgpass
+            unix_socket_directories: /var/run/postgresql
+            unix_socket_permissions: "0750"
+            wal_level: hot_standby
+            wal_log_hints: "on"
+          use_pg_rewind: true
+          use_slots: true
+        retry_timeout: 10
+        ttl: 30
+      method: restore_or_initdb
+      post_init: /etc/timescaledb/scripts/post_init.sh
+      restore_or_initdb:
+        command: |
+          /etc/timescaledb/scripts/restore_or_initdb.sh --encoding=UTF8 --locale=C.UTF-8
+        keep_existing_recovery_conf: true
+    kubernetes:
+      ports:
+      - name: postgresql
+        port: 5432
+        targetPort: 5432
+      role_label: role
+      scope_label: cluster-name
+      use_endpoints: true
+    log:
+      level: WARNING
+    postgresql:
+      authentication:
+        replication:
+          username: standby
+        superuser:
+          username: postgres
+      basebackup:
+      - waldir: /var/lib/postgresql/wal/pg_wal
+      callbacks:
+        on_reload: /etc/timescaledb/scripts/patroni_callback.sh
+        on_restart: /etc/timescaledb/scripts/patroni_callback.sh
+        on_role_change: /etc/timescaledb/scripts/patroni_callback.sh
+        on_start: /etc/timescaledb/scripts/patroni_callback.sh
+        on_stop: /etc/timescaledb/scripts/patroni_callback.sh
+      create_replica_methods:
+      - pgbackrest
+      - basebackup
+      listen: 0.0.0.0:5432
+      pg_hba:
+      - hostnossl all,replication all                all                reject
+      - local     all             all                                   peer
+      - hostssl   all             all                127.0.0.1/32       md5
+      - hostssl   all             all                ::1/128            md5
+      - hostssl   replication     standby            all                md5
+      - hostssl   all             all                all                md5
+      pgbackrest:
+        command: /etc/timescaledb/scripts/pgbackrest_restore.sh
+        keep_data: true
+        no_master: 1
+        no_params: true
+      recovery_conf:
+        restore_command: /etc/timescaledb/scripts/pgbackrest_archive_get.sh %f "%p"
+      use_unix_socket: true
+    restapi:
+      listen: 0.0.0.0:8008
+...
+---
+# Source: prom-adapter/charts/timescaledb-single/templates/configmap-scripts.yaml
+# This file and its contents are licensed under the Apache License 2.0.
+# Please see the included NOTICE for copyright information and LICENSE for a copy of the license.---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chart-1580984566-timescaledb-scripts
+  labels:
+    app: chart-1580984566-timescaledb
+    chart: timescaledb-single-0.5.3
+    release: chart-1580984566
+    heritage: Helm
+    cluster-name: chart-1580984566
+data:
+  # If no backup is configured, archive_command would normally fail. A failing archive_command on a cluster
+  # is going to cause WAL to be kept around forever, meaning we'll fill up Volumes we have quite quickly.
+  #
+  # Therefore, if the backup is disabled, we always return exitcode 0 when archiving
+  pgbackrest_archive.sh: |
+    #!/bin/bash
+    PGBACKREST_BACKUP_ENABLED=0
+
+    [ "${PGBACKREST_BACKUP_ENABLED}" == "0" ] && exit 0
+
+    exec pgbackrest --stanza=poddb archive-push $1
+  pgbackrest_archive_get.sh: |
+    #!/bin/bash
+    PGBACKREST_BACKUP_ENABLED=0
+    [ "${PGBACKREST_BACKUP_ENABLED}" == "0" ] && exit 1
+
+    exec pgbackrest --stanza=poddb archive-get ${1} "${2}"
+  pgbackrest_bootstrap.sh: |
+    #!/bin/bash
+    set -e
+
+    function log {
+        echo "$(date '+%Y-%m-%d %H:%M:%S') - bootstrap - $1"
+    }
+
+    while ! pg_isready -q; do
+        log "Waiting for PostgreSQL to become available"
+        sleep 3
+    done
+
+    # If we are the primary, we want to create/validate the backup stanza
+    if [ "$(psql -c "SELECT pg_is_in_recovery()::text" -AtXq)" == "false" ]; then
+        pgbackrest check || {
+            log "Creating pgBackrest stanza"
+            pgbackrest --stanza=poddb stanza-create --log-level-stderr=info || exit 1
+        }
+    fi
+
+    log "Starting pgBackrest api to listen for backup requests"
+    exec python3 /scripts/pgbackrest-rest.py --stanza=poddb --loglevel=debug
+  pgbackrest_restore.sh: |
+    #!/bin/bash
+    PGBACKREST_BACKUP_ENABLED=0
+    [ "${PGBACKREST_BACKUP_ENABLED}" == "0" ] && exit 1
+
+    PGDATA="/var/lib/postgresql/data"
+    WALDIR="/var/lib/postgresql/wal/pg_wal"
+
+    # A missing PGDATA points to Patroni removing a botched PGDATA, or manual
+    # intervention. In this scenario, we need to recreate the DATA and WALDIRs
+    # to keep pgBackRest happy
+    [ -d "${PGDATA}" ] || install -o postgres -g postgres -d -m 0700 "${PGDATA}"
+    [ -d "${WALDIR}" ] || install -o postgres -g postgres -d -m 0700 "${WALDIR}"
+
+    pgbackrest --stanza=poddb --force --delta --log-level-console=detail restore
+  restore_or_initdb.sh: |
+    #!/bin/bash
+
+    function log {
+      echo "$(date '+%Y-%m-%d %H:%M:%S') - restore_or_initdb - $1"
+    }
+
+    PGDATA="/var/lib/postgresql/data"
+    WALDIR="/var/lib/postgresql/wal/pg_wal"
+
+    # Patroni attaches --scope and --datadir to the arguments, we need to strip them off as
+    # initdb has no business with these parameters
+    initdb_args=""
+    for value in "$@"
+    do
+      [[ $value == --scope* ]] || [[ $value == --datadir* ]] || initdb_args="${initdb_args} $value"
+    done
+
+    log "Invoking initdb"
+    initdb --auth-local=peer --auth-host=md5 --pgdata="${PGDATA}" --waldir="${WALDIR}" ${initdb_args}
+    echo "include_if_exists = '/var/run/postgresql/timescaledb.conf'" >> "${PGDATA}/postgresql.conf"
+
+  post_init.sh: |
+    #!/bin/bash
+    PGBACKREST_BACKUP_ENABLED=0
+
+    function log {
+        echo "$(date '+%Y-%m-%d %H:%M:%S') - post_init - $1"
+    }
+
+    log "Creating extension TimescaleDB in template1 and postgres databases"
+    psql -d "$URL" <<__SQL__
+      \connect template1
+      -- As we're still only initializing, we cannot have synchronous_commit enabled just yet.
+      SET synchronous_commit to 'off';
+      CREATE EXTENSION timescaledb;
+
+      \connect postgres
+      SET synchronous_commit to 'off';
+      CREATE EXTENSION timescaledb;
+    __SQL__
+
+    TABLESPACES=""
+    for tablespace in $TABLESPACES
+    do
+      log "Creating tablespace ${tablespace}"
+      tablespacedir="/var/lib/postgresql/tablespaces/${tablespace}/data"
+      psql -d "$URL" --set tablespace="${tablespace}" --set directory="${tablespacedir}" --set ON_ERROR_STOP=1 <<__SQL__
+        SET synchronous_commit to 'off';
+        CREATE TABLESPACE :"tablespace" LOCATION :'directory';
+    __SQL__
+    done
+
+    if [ "${PGBACKREST_BACKUP_ENABLED}" == "1" ]; then
+      log "Waiting for pgBackRest API to become responsive"
+      while sleep 1; do
+          if [ $SECONDS -gt 10 ]; then
+              log "pgBackRest API did not respond within $SECONDS seconds, will not trigger a backup"
+              exit 0
+          fi
+          timeout 1 bash -c "echo > /dev/tcp/localhost/8081" 2>/dev/null && break
+      done
+
+      log "Triggering pgBackRest backup"
+      curl -i -X POST http://localhost:8081/backups
+    fi
+
+    # We always exit 0 this script, otherwise the database initialization fails.
+    exit 0
+  patroni_callback.sh: |
+    #!/bin/bash
+    set -e
+
+    for suffix in "$1" all
+    do
+      CALLBACK="/etc/timescaledb/callbacks/${suffix}"
+      if [ -f "${CALLBACK}" ]
+      then
+        "${CALLBACK}" $@
+      fi
+    done
+...
+---
+# Source: prom-adapter/charts/timescaledb-single/templates/serviceaccount-timescaledb.yaml
+# This file and its contents are licensed under the Apache License 2.0.
+# Please see the included NOTICE for copyright information and LICENSE for a copy of the license.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: chart-1580984566-timescaledb
+  labels:
+    app: chart-1580984566-timescaledb
+    chart: timescaledb-single-0.5.3
+    release: chart-1580984566
+    heritage: Helm
+---
+# Source: prom-adapter/charts/timescaledb-single/templates/role-timescaledb.yaml
+# This file and its contents are licensed under the Apache License 2.0.
+# Please see the included NOTICE for copyright information and LICENSE for a copy of the license.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: chart-1580984566-timescaledb
+  labels:
+    app: chart-1580984566-timescaledb
+    chart: timescaledb-single-0.5.3
+    release: chart-1580984566
+    heritage: Helm
+rules:
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - update
+  - watch
+  # delete is required only for 'patronictl remove'
+  - delete
+- apiGroups: [""]
+  resources: ["services"]
+  verbs:
+  - create
+- apiGroups: [""]
+  resources:
+  - endpoints
+  - endpoints/restricted
+  verbs:
+  - create
+  - get
+  - patch
+  - update
+  # the following three privileges are necessary only when using endpoints
+  - list
+  - watch
+  # delete is required only for for 'patronictl remove'
+  - delete
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+---
+# Source: prom-adapter/charts/timescaledb-single/templates/rolebinding-timescaledb.yaml
+# This file and its contents are licensed under the Apache License 2.0.
+# Please see the included NOTICE for copyright information and LICENSE for a copy of the license.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: chart-1580984566-timescaledb
+  labels:
+    app: chart-1580984566-timescaledb
+    chart: timescaledb-single-0.5.3
+    release: chart-1580984566
+    heritage: Helm
+subjects:
+  - kind: ServiceAccount
+    name: chart-1580984566-timescaledb
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: chart-1580984566-timescaledb
+---
+# Source: prom-adapter/charts/timescaledb-single/templates/svc-timescaledb-config.yaml
+# This file and its contents are licensed under the Apache License 2.0.
+# Please see the included NOTICE for copyright information and LICENSE for a copy of the license.
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: chart-1580984566-config
+  labels:
+    app: chart-1580984566-timescaledb
+    chart: timescaledb-single-0.5.3
+    release: chart-1580984566
+    heritage: Helm
+    cluster-name: chart-1580984566
+spec:
+  selector:
+    app: chart-1580984566-timescaledb
+    cluster-name: chart-1580984566
+  type: ClusterIP
+  clusterIP: None
+  ports:
+  - name: patroni
+    port: 8008
+    protocol: TCP
+---
+# Source: prom-adapter/charts/timescaledb-single/templates/svc-timescaledb-replica.yaml
+# This file and its contents are licensed under the Apache License 2.0.
+# Please see the included NOTICE for copyright information and LICENSE for a copy of the license.
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: chart-1580984566-replica
+  labels:
+    app: chart-1580984566-timescaledb
+    chart: timescaledb-single-0.5.3
+    release: chart-1580984566
+    heritage: Helm
+    cluster-name: chart-1580984566
+    role: replica
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-connection-idle-timeout: "4000"
+spec:
+  selector:
+    app: chart-1580984566-timescaledb
+    cluster-name: chart-1580984566
+    role: replica
+  type: ClusterIP
+  ports:
+  - name: postgresql
+    port: 5432
+    protocol: TCP
+---
+# Source: prom-adapter/charts/timescaledb-single/templates/svc-timescaledb.yaml
+# This file and its contents are licensed under the Apache License 2.0.
+# Please see the included NOTICE for copyright information and LICENSE for a copy of the license.
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: chart-1580984566
+  labels:
+    app: chart-1580984566-timescaledb
+    chart: timescaledb-single-0.5.3
+    release: chart-1580984566
+    heritage: Helm
+    cluster-name: chart-1580984566
+    role: master
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-connection-idle-timeout: "4000"
+spec:
+  type: LoadBalancer
+  ports:
+  - name: postgresql
+    port: 5432
+    targetPort: postgresql
+    protocol: TCP
+---
+# Source: prom-adapter/templates/svc-prom-adapter.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: chart-1580984566-adapter
+  labels:
+    app: chart-1580984566-prom-adapter
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-connection-idle-timeout: "4000"
+spec:
+  type: LoadBalancer
+  ports:
+  - name: prom-ad-port
+    port: 9201
+    targetPort: prom-ad-port
+    protocol: TCP
+---
+# Source: prom-adapter/templates/pod-prom-adapter.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: chart-1580984566-prom-adapter-adapter
+spec:
+  containers:
+    - image: timescale/prometheus-postgresql-adapter
+      imagePullPolicy: IfNotPresent
+      name: prom-adapter
+      ports:
+        - containerPort: 9201
+          name: prom-ad-port
+      env:
+        - name: ADAPTER_USER
+          value: postgres
+        - name: ADAPTER_PASS
+          valueFrom:
+            secretKeyRef:
+              name: chart-1580984566-timescaledb-passwords
+              key: postgres
+        - name: PG_HOST
+          value: chart-1580984566.default.svc.cluster.local
+      args:
+        [
+          -pg-host=$(PG_HOST),
+          -pg-user=$(ADAPTER_USER),
+          -pg-password=$(ADAPTER_PASS),
+          -pg-ssl-mode=require
+        ]
+---
+# Source: prom-adapter/charts/timescaledb-single/templates/statefulset-timescaledb.yaml
+# This file and its contents are licensed under the Apache License 2.0.
+# Please see the included NOTICE for copyright information and LICENSE for a copy of the license.
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: chart-1580984566-timescaledb
+  labels:
+    app: chart-1580984566-timescaledb
+    chart: timescaledb-single-0.5.3
+    release: chart-1580984566
+    heritage: Helm
+    cluster-name: chart-1580984566
+spec:
+  serviceName: chart-1580984566-timescaledb
+  replicas: 3
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      app: chart-1580984566-timescaledb
+      release: chart-1580984566
+  template:
+    metadata:
+      name: chart-1580984566-timescaledb
+      labels:
+        app: chart-1580984566-timescaledb
+        release: chart-1580984566
+        cluster-name: chart-1580984566
+    spec:
+      serviceAccountName: chart-1580984566-timescaledb
+      securityContext:
+        # The postgres user inside the TimescaleDB image has uid=1000.
+        # This configuration ensures the permissions of the mounts are suitable
+        fsGroup: 1000
+      initContainers:
+      containers:
+      - name: timescaledb
+        image: "timescaledev/timescaledb-ha:pg11-ts1.6"
+        imagePullPolicy: IfNotPresent
+        # When reusing an already existing volume it sometimes happens that the permissions
+        # of the PGDATA and/or wal directory are incorrect. To guard against this, we always correctly
+        # set the permissons of these directories before we hand over to Patroni.
+        # We also create all the tablespaces that are defined, to ensure a smooth restore/recovery on a
+        # pristine set of Volumes.
+        # As PostgreSQL requires to have full control over the permissions of the tablespace directories,
+        # we create a subdirectory "data" in every tablespace mountpoint. The full path of every tablespace
+        # therefore always ends on "/data".
+        command:
+          - sh
+          - "-c"
+          - |
+            
+            install -o postgres -g postgres -d -m 0700 "/var/lib/postgresql/data" "/var/lib/postgresql/wal/pg_wal" || exit 1
+            TABLESPACES=""
+            for tablespace in ; do
+              install -o postgres -g postgres -d -m 0700 "/var/lib/postgresql/tablespaces/${tablespace}/data"
+            done
+
+            exec patroni /etc/timescaledb/patroni.yaml
+        env:
+        # We use mixed case environment variables for Patroni User management,
+        # as the variable themselves are documented to be PATRONI_<username>_OPTIONS.
+        # Where possible, we want to have lowercase usernames in PostgreSQL as more complex postgres usernames
+        # requiring quoting to be done in certain contexts, which many tools do not do correctly, or even at all.
+        # https://patroni.readthedocs.io/en/latest/ENVIRONMENT.html#bootstrap-configuration
+        - name: PATRONI_admin_OPTIONS
+          value: createrole,createdb
+        - name: PATRONI_admin_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: chart-1580984566-timescaledb-passwords
+              key: "admin"
+        - name: PATRONI_postgres_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: chart-1580984566-timescaledb-passwords
+              key: "postgres"
+        - name: PATRONI_standby_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: chart-1580984566-timescaledb-passwords
+              key: "standby"
+        - name: PATRONI_REPLICATION_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: chart-1580984566-timescaledb-passwords
+              key: standby
+        - name: PATRONI_SUPERUSER_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: chart-1580984566-timescaledb-passwords
+              key: postgres
+        - name: PATRONI_REPLICATION_USERNAME
+          value: standby
+        # To specify the PostgreSQL and Rest API connect addresses we need
+        # the PATRONI_KUBERNETES_POD_IP to be available as a bash variable, so we can compose an
+        # IP:PORT address later on
+        - name: PATRONI_KUBERNETES_POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        - name: PATRONI_POSTGRESQL_CONNECT_ADDRESS
+          value: "$(PATRONI_KUBERNETES_POD_IP):5432"
+        - name: PATRONI_RESTAPI_CONNECT_ADDRESS
+          value: "$(PATRONI_KUBERNETES_POD_IP):8008"
+        - name: PATRONI_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: PATRONI_POSTGRESQL_DATA_DIR
+          value: "/var/lib/postgresql/data"
+        - name: PATRONI_KUBERNETES_NAMESPACE
+          value: default
+        - name: PATRONI_KUBERNETES_LABELS
+          value: "{app: chart-1580984566-timescaledb, cluster-name: chart-1580984566, release: chart-1580984566}"
+        - name: PATRONI_SCOPE
+          value: chart-1580984566
+        - name: PGBACKREST_CONFIG
+          value: /etc/pgbackrest/pgbackrest.conf
+        # PGDATA and PGHOST are not required to let Patroni/PostgreSQL run correctly,
+        # but for interactive sessions, callbacks and PostgreSQL tools they should be correct.
+        - name: PGDATA
+          value: "$(PATRONI_POSTGRESQL_DATA_DIR)"
+        - name: PGHOST
+          value: "/var/run/postgresql"
+          # pgBackRest is also called using the archive_command if the backup is enabled.
+          # this script will also need access to the environment variables specified for
+          # the backup. This can be removed once we do not directly invoke pgBackRest
+          # from inside the TimescaleDB container anymore
+        ports:
+        - containerPort: 8008
+        - containerPort: 5432
+        readinessProbe:
+          exec:
+            command:
+              - pg_isready
+              - -h
+              - /var/run/postgresql
+          initialDelaySeconds: 5
+          periodSeconds: 30
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 6
+        volumeMounts:
+        - name: storage-volume
+          mountPath: "/var/lib/postgresql"
+          subPath: ""
+        - name: wal-volume
+          mountPath: "/var/lib/postgresql/wal"
+          subPath: ""
+        - mountPath: /etc/timescaledb/patroni.yaml
+          subPath: patroni.yaml
+          name: patroni-config
+          readOnly: true
+        - mountPath: /etc/timescaledb/scripts
+          name: timescaledb-scripts
+          readOnly: true
+        - mountPath: /etc/certificate
+          name: certificate
+          readOnly: true
+        - name: socket-directory
+          mountPath: /var/run/postgresql
+        
+        resources:
+          {}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              topologyKey: "kubernetes.io/hostname"
+              labelSelector:
+                matchLabels:
+                  app:  timescaledb
+                  release: "chart-1580984566"
+                  cluster-name: chart-1580984566
+          - weight: 50
+            podAffinityTerm:
+              topologyKey: failure-domain.beta.kubernetes.io/zone
+              labelSelector:
+                matchLabels:
+                  app:  timescaledb
+                  release: "chart-1580984566"
+                  cluster-name: chart-1580984566
+        
+      volumes:
+      - name: socket-directory
+        emptyDir: {}
+      - name: patroni-config
+        configMap:
+          name: chart-1580984566-timescaledb-patroni
+      - name: timescaledb-scripts
+        configMap:
+          name: chart-1580984566-timescaledb-scripts
+          defaultMode: 488 # 0750 permissions
+      
+      - name: certificate
+        secret:
+          secretName: chart-1580984566-timescaledb-certificate
+          defaultMode: 416 # 0640 permissions
+  volumeClaimTemplates:
+    - metadata:
+        name: storage-volume
+        annotations:
+        labels:
+          app: chart-1580984566-timescaledb
+          release: chart-1580984566
+          heritage: Helm
+          cluster-name: chart-1580984566
+          purpose: data-directory
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: "2Gi"
+    - metadata:
+        name: wal-volume
+        annotations:
+        labels:
+          app: chart-1580984566-timescaledb
+          release: chart-1580984566
+          heritage: Helm
+          cluster-name: chart-1580984566
+          purpose: wal-directory
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: "1Gi"
+---
+# Source: prom-adapter/charts/timescaledb-single/templates/pgbackrest.yaml
+# This file and its contents are licensed under the Apache License 2.0.
+# Please see the included NOTICE for copyright information and LICENSE for a copy of the license.
+---
+# Source: prom-adapter/charts/timescaledb-single/templates/sec-passwords.yaml
+# This file and its contents are licensed under the Apache License 2.0.
+# Please see the included NOTICE for copyright information and LICENSE for a copy of the license.
+---
+# Source: prom-adapter/charts/timescaledb-single/templates/sec-pgbackrest.yaml
+# This file and its contents are licensed under the Apache License 2.0.
+# Please see the included NOTICE for copyright information and LICENSE for a copy of the license.
+---
+# Source: prom-adapter/charts/timescaledb-single/templates/svc-prometheus.yaml
+# This file and its contents are licensed under the Apache License 2.0.
+# Please see the included NOTICE for copyright information and LICENSE for a copy of the license.
+#
+# This service is only created if Prometheus is enabled.
+---
+# Source: prom-adapter/templates/sec-prom-adapter.yaml
+# prom-adapter-passwords secret created only if timescaledb-sing
+# is disabled
+

@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ template "timescaledb.fullname" . }}-adapter
+spec:
+  containers:
+    - image: {{ .Values.promadapter.image }}
+      imagePullPolicy: IfNotPresent
+      name: prom-adapter
+      ports:
+        - containerPort: 9201
+          name: prom-ad-port
+      env:
+        - name: ADAPTER_USER
+          value: {{ .Values.promadapter.user }}
+        {{ if index .Values "timescaledb-single" "enabled" -}}
+        - name: ADAPTER_PASS
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Release.Name }}-timescaledb-passwords
+              key: {{ .Values.promadapter.user }}
+        - name: PG_HOST
+          value: {{ template "clusterName" . }}.{{ $.Release.Namespace }}.svc.cluster.local
+        {{- else -}}
+        - name: ADAPTER_PASS
+          valueFrom:
+            secretKeyRef:
+              name: prom-adapter-passwords
+              key: {{ .Values.promadapter.user }}
+        - name: PG_HOST
+          value: {{ .Values.promadapter.host }} 
+        {{- end }}
+      args:
+        [
+          -pg-host=$(PG_HOST),
+          -pg-user=$(ADAPTER_USER),
+          -pg-password=$(ADAPTER_PASS),
+          -pg-ssl-mode=require
+        ]

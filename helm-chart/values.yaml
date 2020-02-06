@@ -1,0 +1,9 @@
+promadapter:
+  image: timescale/prometheus-postgresql-adapter
+  user: postgres
+  pass: YWRtaW4= # base64 encoded password for postgres
+  host: 127.0.0.1
+
+timescaledb-single:
+  enabled: true
+  replicaCount: 1

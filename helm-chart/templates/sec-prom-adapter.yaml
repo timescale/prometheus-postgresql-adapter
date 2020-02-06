@@ -1,0 +1,16 @@
+{{ if index .Values "timescaledb-single" "enabled" -}}
+# prom-adapter-passwords secret created only if timescaledb-sing
+# is disabled
+{{- else -}}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: prom-adapter-passwords
+  labels:
+    app: {{ template "timescaledb.fullname" . }}
+type: Opaque
+data:
+  {{ .Values.promadapter.user}}: {{ .Values.promadapter.pass }}
+...
+{{- end }}
