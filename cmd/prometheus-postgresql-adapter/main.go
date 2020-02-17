@@ -23,6 +23,7 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -232,6 +233,21 @@ func initElector(cfg *config, db *sql.DB) *util.Elector {
 	return &scheduledElector.Elector
 }
 
+var writeRequestPool = sync.Pool{}
+
+func acquireWriteRequest() *prompb.WriteRequest {
+	res := writeRequestPool.Get()
+	if res == nil {
+		return new(prompb.WriteRequest)
+	}
+	return res.(*prompb.WriteRequest)
+}
+
+func releaseWriteRequest(b *prompb.WriteRequest) {
+	b.Reset()
+	writeRequestPool.Put(b)
+}
+
 func write(writer writer) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		compressed, err := ioutil.ReadAll(r.Body)
@@ -248,14 +264,15 @@ func write(writer writer) http.Handler {
 			return
 		}
 
-		var req prompb.WriteRequest
-		if err := proto.Unmarshal(reqBuf, &req); err != nil {
+		req := acquireWriteRequest()
+		defer releaseWriteRequest(req)
+		if err := proto.Unmarshal(reqBuf, req); err != nil {
 			log.Error("msg", "Unmarshal error", "err", err.Error())
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
-		samples := protoToSamples(&req)
+		samples := protoToSamples(req)
 		receivedSamples.Add(float64(len(samples)))
 
 		err = sendSamples(writer, samples)
@@ -285,6 +302,21 @@ func getCounterValue(counter prometheus.Counter) float64 {
 	return dtoMetric.GetCounter().GetValue()
 }
 
+var readRequestPool = sync.Pool{}
+
+func acquireReadRequest() *prompb.ReadRequest {
+	res := readRequestPool.Get()
+	if res == nil {
+		return new(prompb.ReadRequest)
+	}
+	return res.(*prompb.ReadRequest)
+}
+
+func releaseReadRequest(b *prompb.ReadRequest) {
+	b.Reset()
+	readRequestPool.Put(b)
+}
+
 func read(reader reader) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		compressed, err := ioutil.ReadAll(r.Body)
@@ -301,15 +333,16 @@ func read(reader reader) http.Handler {
 			return
 		}
 
-		var req prompb.ReadRequest
-		if err := proto.Unmarshal(reqBuf, &req); err != nil {
+		req := acquireReadRequest()
+		defer releaseReadRequest(req)
+		if err := proto.Unmarshal(reqBuf, req); err != nil {
 			log.Error("msg", "Unmarshal error", "err", err.Error())
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
 		var resp *prompb.ReadResponse
-		resp, err = reader.Read(&req)
+		resp, err = reader.Read(req)
 		if err != nil {
 			log.Warn("msg", "Error executing query", "query", req, "storage", reader.Name(), "err", err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
