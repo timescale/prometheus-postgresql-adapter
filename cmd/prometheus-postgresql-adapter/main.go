@@ -92,8 +92,8 @@ var (
 	)
 	httpRequestDuration = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "http_request_duration_ms",
-			Help:    "Duration of HTTP request in milliseconds",
+			Name:    "http_request_duration_seconds",
+			Help:    "Duration of HTTP request in seconds",
 			Buckets: prometheus.DefBuckets,
 		},
 		[]string{"path"},
@@ -396,8 +396,8 @@ func timeHandler(path string, handler http.Handler) http.Handler {
 	f := func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		handler.ServeHTTP(w, r)
-		elapsedMs := time.Since(start).Nanoseconds() / int64(time.Millisecond)
-		httpRequestDuration.WithLabelValues(path).Observe(float64(elapsedMs))
+		elapsedSec := time.Since(start).Nanoseconds() / int64(time.Second)
+		httpRequestDuration.WithLabelValues(path).Observe(float64(elapsedSec))
 	}
 	return http.HandlerFunc(f)
 }
