@@ -1,4 +1,4 @@
-# **SUNSET NOTICE**
+# **NOTICE: THIS PROJECT HAS BEEN SUPERSEDED BY TIMESCALE-PROMETHEUS**
 
 We'll be sunsetting this project in the coming months as we focus on a new implementation with additional functionality
 and better support for new TimescaleDB features (such as compression). You can find the new project at
