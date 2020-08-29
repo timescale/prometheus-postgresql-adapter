@@ -1,10 +1,12 @@
 # **NOTICE: THIS PROJECT HAS BEEN SUPERSEDED BY TIMESCALE-PROMETHEUS**
 
-We'll be sunsetting this project in the coming months as we focus on a new implementation with additional functionality
-and better support for new TimescaleDB features (such as compression). You can find the new project at
-[https://github.com/timescale/timescale-prometheus](https://github.com/timescale/timescale-prometheus).
+This project has been superseded by[Timescale-Prometheus](https://github.com/timescale/timescale-prometheus). 
+Like this project, Timescale-Prometheus allows easy storage of Prometheus metrics in TimescaleDB + Postgres, 
+but also offers: automatic partitioning, native compression (typically 95% storage savings), 
+native data retention policies, full SQL and PromQL, and more.
 
-More details can be found in our [design document](https://tsdb.co/prom-design-doc) for the new project.
+You can find the new project at [https://github.com/timescale/timescale-prometheus](https://github.com/timescale/timescale-prometheus) and 
+more details can be found in our [design document](https://tsdb.co/prom-design-doc).
 
 This project will continue only in maintenance mode.
 
